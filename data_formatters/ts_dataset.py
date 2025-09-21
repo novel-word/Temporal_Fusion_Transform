@@ -18,6 +18,7 @@ class TSDataset(Dataset):
         data.sort_values(by=[id_col, time_col], inplace=True)
         print('Getting valid sampling locations.')
         
+        # 计算可用位置（原样保留）
         valid_sampling_locations = []
         split_data_map = {}
         for identifier, df in data.groupby(id_col):
@@ -29,30 +30,32 @@ class TSDataset(Dataset):
                 ]
             split_data_map[identifier] = df
 
-        self.inputs = np.zeros((max_samples, self.time_steps, self.input_size))
-        self.outputs = np.zeros((max_samples, self.time_steps, self.output_size))
-        self.time = np.empty((max_samples, self.time_steps, 1))
-        self.identifiers = np.empty((max_samples,self.time_steps, num_static))
+        # 决定实际样本数 & 是否随机
+        total_avail = len(valid_sampling_locations)
+        use_all = (max_samples is None) or (max_samples <= 0) or (max_samples >= total_avail)
 
-        if max_samples > 0 and len(valid_sampling_locations) > max_samples:
-            print('Extracting {} samples...'.format(max_samples))
-            ranges = [valid_sampling_locations[i] for i in np.random.choice(
-                  len(valid_sampling_locations), max_samples, replace=False)]
+        if not use_all:
+            print(f'Extracting {max_samples} samples out of {total_avail}...')
+            chosen_idx = np.random.choice(total_avail, max_samples, replace=False)
+            ranges = [valid_sampling_locations[i] for i in chosen_idx]
         else:
-            print('Max samples={} exceeds # available segments={}'.format(
-                  max_samples, len(valid_sampling_locations)))
+            print(f'Using all {total_avail} samples.')
             ranges = valid_sampling_locations
-        
-        for i, tup in enumerate(ranges):
-            if ((i + 1) % 10000) == 0:
-                print(i + 1, 'of', max_samples, 'samples done...')
-            identifier, start_idx = tup
-            sliced = split_data_map[identifier].iloc[start_idx -
-                                               self.time_steps:start_idx]
+
+        # 以实际样本数分配内存，避免空样本
+        n_samples = len(ranges)
+        self.inputs = np.zeros((n_samples, self.time_steps, self.input_size))
+        self.outputs = np.zeros((n_samples, self.time_steps, self.output_size))
+        self.time = np.empty((n_samples, self.time_steps, 1))
+        self.identifiers = np.empty((n_samples, self.time_steps, num_static))
+
+        # 填充
+        for i, (identifier, start_idx) in enumerate(ranges):
+            sliced = split_data_map[identifier].iloc[start_idx - self.time_steps:start_idx]
             self.inputs[i, :, :] = sliced[input_cols]
             self.outputs[i, :, :] = sliced[[target_col]]
             self.time[i, :, 0] = sliced[time_col]
-            self.identifiers[i,:, :] = sliced[static_cols]
+            self.identifiers[i, :, :] = sliced[static_cols]
 
         self.sampled_data = {
             'inputs': self.inputs,
