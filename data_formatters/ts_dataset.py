@@ -24,9 +24,10 @@ class TSDataset(Dataset):
         for identifier, df in data.groupby(id_col):
             num_entries = len(df)
             if num_entries >= self.time_steps:
+                step_size = self.time_steps - self.num_encoder_steps # 每次滚动的步数，这里的数应该也等于预测步数。这样每次预测结果不会重叠。
                 valid_sampling_locations += [
                     (identifier, self.time_steps + i)
-                    for i in range(num_entries - self.time_steps + 1)
+                    for i in range(0, num_entries - self.time_steps + 1, step_size)
                 ]
             split_data_map[identifier] = df
 
